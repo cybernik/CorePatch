@@ -5,10 +5,11 @@ import android.os.Build;
 import com.coderstory.toolkit.BuildConfig;
 
 import de.robv.android.xposed.IXposedHookLoadPackage;
+import de.robv.android.xposed.IXposedHookZygoteInit;
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.callbacks.XC_LoadPackage;
 
-public class MainHook implements IXposedHookLoadPackage {
+public class MainHook implements IXposedHookLoadPackage, IXposedHookZygoteInit {
     public static final String TAG = "CorePatch";
 
     @Override
@@ -44,6 +45,15 @@ public class MainHook implements IXposedHookLoadPackage {
                     new CorePatchForV().handleLoadPackage(lpparam);
                     break;
             }
+        }
+    }
+
+    @Override
+    public void initZygote(StartupParam startupParam) throws Throwable {
+        switch (Build.VERSION.SDK_INT) {
+            case Build.VERSION_CODES.TIRAMISU: // 33
+                new CorePatchForT().initZygote(startupParam);
+                break;
         }
     }
 }

@@ -148,7 +148,36 @@ public class CorePatchForT extends CorePatchForS implements IXposedHookZygoteIni
                     null
             );
 
+            Class<?> utilsClass = XposedHelpers.findClass(
+                    "com.android.server.pm.PackageManagerServiceUtils",
+                    null
+            );
+
+            Class<?> permissionManagerServiceImplClass = XposedHelpers.findClass(
+                    "com.android.server.pm.permission.PermissionManagerServiceImpl",
+                    null
+            );
+
             XposedBridge.log(TAG + ": Found all required classes in Zygote");
+
+            XposedHelpers.findAndHookMethod(permissionManagerServiceImplClass, "checkPrivilegedPermissionAllowlist",
+                    "com.android.server.pm.parsing.pkg.AndroidPackage", "com.android.server.pm.pkg.PackageStateInternal", "com.android.server.pm.permission.Permission",
+                    new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                            param.setResult(true);
+                        }
+                    });
+
+
+            XposedHelpers.findAndHookMethod(utilsClass, "canJoinSharedUserId",
+                    "android.content.pm.SigningDetails", "android.content.pm.SigningDetails",
+                    new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                            param.setResult(true);
+                        }
+                    });
 
             XposedHelpers.findAndHookMethod(appOpsServiceClass, "verifyAndGetBypass",
                     int.class, String.class, String.class, String.class,
