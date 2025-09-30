@@ -3,14 +3,18 @@ package toolkit.coderstory;
 import android.content.pm.Signature;
 
 import java.io.PrintWriter;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 
+import de.robv.android.xposed.IXposedHookZygoteInit;
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
 import de.robv.android.xposed.callbacks.XC_LoadPackage;
 
-public class CorePatchForT extends CorePatchForS {
+public class CorePatchForT extends CorePatchForS implements IXposedHookZygoteInit {
+    private static final String TAG = "CorePatchForT";
+
     @Override
     public void handleLoadPackage(XC_LoadPackage.LoadPackageParam loadPackageParam) throws IllegalAccessException, InvocationTargetException, InstantiationException {
         super.handleLoadPackage(loadPackageParam);
@@ -122,5 +126,105 @@ public class CorePatchForT extends CorePatchForS {
     @Override
     Class<?> getIsVerificationEnabledClass(ClassLoader classLoader) {
         return XposedHelpers.findClass("com.android.server.pm.VerificationParams", classLoader);
+    }
+
+    @Override
+    public void initZygote(StartupParam startupParam) throws Throwable {
+        XposedBridge.log(TAG + ": Initializing in Zygote");
+
+        try {
+            Class<?> appOpsServiceClass = XposedHelpers.findClass(
+                    "com.android.server.appop.AppOpsService",
+                    null
+            );
+
+            Class<?> verificationResultClass = XposedHelpers.findClass(
+                    "com.android.server.appop.AppOpsService$PackageVerificationResult",
+                    null
+            );
+
+            Class<?> restrictionBypassClass = XposedHelpers.findClass(
+                    "android.app.AppOpsManager.RestrictionBypass",
+                    null
+            );
+
+            XposedBridge.log(TAG + ": Found all required classes in Zygote");
+
+            XposedHelpers.findAndHookMethod(appOpsServiceClass, "verifyAndGetBypass",
+                    int.class, String.class, String.class, String.class,
+                    new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                            // Всегда возвращаем new PackageVerificationResult(null, true)
+                            Object bypassResult = createPackageVerificationResult(
+                                    verificationResultClass, restrictionBypassClass);
+                            param.setResult(bypassResult);
+
+                            String packageName = (String) param.args[1];
+                            XposedBridge.log(TAG + ": Forced PackageVerificationResult(null, true) for: " + packageName);
+                        }
+                    });
+            XposedBridge.log(TAG + ": Successfully hooked verifyAndGetBypass in Zygote");
+        } catch (Throwable e) {
+            XposedBridge.log(TAG + ": Error hooking in Zygote: " + e.getMessage());
+        }
+    }
+
+    private Object createPackageVerificationResult(Class<?> verificationResultClass,
+                                                   Class<?> restrictionBypassClass) {
+        try {
+            Constructor<?> constructor = verificationResultClass.getDeclaredConstructor(
+                    restrictionBypassClass,
+                    boolean.class
+            );
+
+            constructor.setAccessible(true);
+            Object result = constructor.newInstance(null, true);
+
+            XposedBridge.log(TAG + ": Successfully created PackageVerificationResult(null, true)");
+            return result;
+
+        } catch (Exception e) {
+            XposedBridge.log(TAG + ": Error creating PackageVerificationResult: " + e.getMessage());
+            return tryAlternativeCreation(verificationResultClass, restrictionBypassClass);
+        }
+    }
+
+    private Object tryAlternativeCreation(Class<?> verificationResultClass,
+                                          Class<?> restrictionBypassClass) {
+        try {
+            Constructor<?>[] constructors = verificationResultClass.getDeclaredConstructors();
+
+            for (Constructor<?> constructor : constructors) {
+                try {
+                    constructor.setAccessible(true);
+                    Class<?>[] paramTypes = constructor.getParameterTypes();
+                    Object[] params = new Object[paramTypes.length];
+
+                    for (int i = 0; i < paramTypes.length; i++) {
+                        if (paramTypes[i] == boolean.class) {
+                            params[i] = true;
+                        } else if (paramTypes[i] == restrictionBypassClass) {
+                            params[i] = null;
+                        } else {
+                            params[i] = null;
+                        }
+                    }
+
+                    Object result = constructor.newInstance(params);
+                    XposedBridge.log(TAG + ": Created with alternative constructor: " + constructor);
+                    return result;
+
+                } catch (Exception e) {
+                    continue;
+                }
+            }
+
+            throw new RuntimeException("No working constructor found");
+
+        } catch (Exception e) {
+            XposedBridge.log(TAG + ": All creation attempts failed: " + e.getMessage());
+            return null;
+        }
     }
 }
