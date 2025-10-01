@@ -11,7 +11,7 @@
             android:key="authcreak"
             android:title="@string/authcreak"
             android:summary="@string/authcreak_summary"
-            android:defaultValue="false" />
+            android:defaultValue="true" />
         <SwitchPreference
             android:key="digestCreak"
             android:title="@string/digestCreak"
@@ -21,13 +21,13 @@
             android:key="exactSigCheck"
             android:title="@string/exactSigCheck"
             android:summary="@string/exactSigCheck_summary"
-            android:defaultValue="false"/>
+            android:defaultValue="true"/>
 
         <SwitchPreference
             android:key="UsePreSig"
             android:title="@string/UsePreSig"
             android:summary="@string/UsePreSig_summary"
-            android:defaultValue="false" />
+            android:defaultValue="true" />
 
         <SwitchPreference
             android:key="bypassBlock"
@@ -39,7 +39,7 @@
             android:key="sharedUser"
             android:title="@string/shared_user_title"
             android:summary="@string/shared_user_summary"
-            android:defaultValue="false" />
+            android:defaultValue="true" />
 
         <SwitchPreference
             android:key="disableVerificationAgent"
