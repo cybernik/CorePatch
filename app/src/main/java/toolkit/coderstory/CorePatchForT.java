@@ -88,6 +88,8 @@ public class CorePatchForT extends CorePatchForS implements IXposedHookZygoteIni
             });
         }
 
+        optionalHooks(loadPackageParam.classLoader);
+
         // ensure verifySignatures success
         // https://cs.android.com/android/platform/superproject/main/+/main:frameworks/base/services/core/java/com/android/server/pm/PackageManagerServiceUtils.java;l=621;drc=2e50991320cbef77d3e8504a4b284adae8c2f4d2
         var utils = XposedHelpers.findClassIfExists("com.android.server.pm.PackageManagerServiceUtils", loadPackageParam.classLoader);
@@ -128,75 +130,86 @@ public class CorePatchForT extends CorePatchForS implements IXposedHookZygoteIni
         return XposedHelpers.findClass("com.android.server.pm.VerificationParams", classLoader);
     }
 
+    private void optionalHooks(ClassLoader loader) {
+        boolean hasLoader = loader != null;
+
+        try {
+            Class<?> appOpsServiceClass = XposedHelpers.findClassIfExists(
+                    "com.android.server.appop.AppOpsService",
+                    loader
+            );
+
+            Class<?> verificationResultClass = XposedHelpers.findClassIfExists(
+                    "com.android.server.appop.AppOpsService$PackageVerificationResult",
+                    loader
+            );
+
+            Class<?> restrictionBypassClass = XposedHelpers.findClassIfExists(
+                    "android.app.AppOpsManager.RestrictionBypass",
+                    loader
+            );
+
+            if (appOpsServiceClass != null && verificationResultClass != null && restrictionBypassClass != null) {
+                XposedBridge.log(TAG + ": verifyAndGetBypass (" + hasLoader + ")");
+                XposedHelpers.findAndHookMethod(appOpsServiceClass, "verifyAndGetBypass",
+                        int.class, String.class, String.class, String.class,
+                        new XC_MethodHook() {
+                            @Override
+                            protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                                Object bypassResult = createPackageVerificationResult(
+                                        verificationResultClass, restrictionBypassClass);
+                                param.setResult(bypassResult);
+
+                                String packageName = (String) param.args[1];
+                                XposedBridge.log(TAG + ": Forced PackageVerificationResult(null, true) for: " + packageName);
+                            }
+                        });
+            }
+
+            Class<?> utilsClass = XposedHelpers.findClassIfExists(
+                    "com.android.server.pm.PackageManagerServiceUtils",
+                    loader
+            );
+
+            if (utilsClass != null) {
+                XposedBridge.log(TAG + ": canJoinSharedUserId (" + hasLoader + ")");
+                XposedHelpers.findAndHookMethod(utilsClass, "canJoinSharedUserId",
+                        "android.content.pm.SigningDetails", "android.content.pm.SigningDetails",
+                        new XC_MethodHook() {
+                            @Override
+                            protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                                param.setResult(true);
+                            }
+                        });
+            }
+
+            Class<?> permissionManagerServiceImplClass = XposedHelpers.findClassIfExists(
+                    "com.android.server.pm.permission.PermissionManagerServiceImpl",
+                    loader
+            );
+
+            if (permissionManagerServiceImplClass != null) {
+                XposedBridge.log(TAG + ": checkPrivilegedPermissionAllowlist (" + hasLoader + ")");
+                XposedHelpers.findAndHookMethod(permissionManagerServiceImplClass, "checkPrivilegedPermissionAllowlist",
+                        "com.android.server.pm.parsing.pkg.AndroidPackage", "com.android.server.pm.pkg.PackageStateInternal", "com.android.server.pm.permission.Permission",
+                        new XC_MethodHook() {
+                            @Override
+                            protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                                param.setResult(true);
+                            }
+                        });
+            }
+
+            XposedBridge.log(TAG + ": Successfully hooked in optionalHooks");
+        } catch (Throwable e) {
+            XposedBridge.log(TAG + ": Error hooking in optionalHooks: " + e.getMessage());
+        }
+    }
+
     @Override
     public void initZygote(StartupParam startupParam) throws Throwable {
         XposedBridge.log(TAG + ": Initializing in Zygote");
-
-        try {
-            Class<?> appOpsServiceClass = XposedHelpers.findClass(
-                    "com.android.server.appop.AppOpsService",
-                    null
-            );
-
-            Class<?> verificationResultClass = XposedHelpers.findClass(
-                    "com.android.server.appop.AppOpsService$PackageVerificationResult",
-                    null
-            );
-
-            Class<?> restrictionBypassClass = XposedHelpers.findClass(
-                    "android.app.AppOpsManager.RestrictionBypass",
-                    null
-            );
-
-            Class<?> utilsClass = XposedHelpers.findClass(
-                    "com.android.server.pm.PackageManagerServiceUtils",
-                    null
-            );
-
-            Class<?> permissionManagerServiceImplClass = XposedHelpers.findClass(
-                    "com.android.server.pm.permission.PermissionManagerServiceImpl",
-                    null
-            );
-
-            XposedBridge.log(TAG + ": Found all required classes in Zygote");
-
-            XposedHelpers.findAndHookMethod(permissionManagerServiceImplClass, "checkPrivilegedPermissionAllowlist",
-                    "com.android.server.pm.parsing.pkg.AndroidPackage", "com.android.server.pm.pkg.PackageStateInternal", "com.android.server.pm.permission.Permission",
-                    new XC_MethodHook() {
-                        @Override
-                        protected void afterHookedMethod(MethodHookParam param) throws Throwable {
-                            param.setResult(true);
-                        }
-                    });
-
-
-            XposedHelpers.findAndHookMethod(utilsClass, "canJoinSharedUserId",
-                    "android.content.pm.SigningDetails", "android.content.pm.SigningDetails",
-                    new XC_MethodHook() {
-                        @Override
-                        protected void afterHookedMethod(MethodHookParam param) throws Throwable {
-                            param.setResult(true);
-                        }
-                    });
-
-            XposedHelpers.findAndHookMethod(appOpsServiceClass, "verifyAndGetBypass",
-                    int.class, String.class, String.class, String.class,
-                    new XC_MethodHook() {
-                        @Override
-                        protected void afterHookedMethod(MethodHookParam param) throws Throwable {
-                            // Всегда возвращаем new PackageVerificationResult(null, true)
-                            Object bypassResult = createPackageVerificationResult(
-                                    verificationResultClass, restrictionBypassClass);
-                            param.setResult(bypassResult);
-
-                            String packageName = (String) param.args[1];
-                            XposedBridge.log(TAG + ": Forced PackageVerificationResult(null, true) for: " + packageName);
-                        }
-                    });
-            XposedBridge.log(TAG + ": Successfully hooked verifyAndGetBypass in Zygote");
-        } catch (Throwable e) {
-            XposedBridge.log(TAG + ": Error hooking in Zygote: " + e.getMessage());
-        }
+        optionalHooks(null);
     }
 
     private Object createPackageVerificationResult(Class<?> verificationResultClass,
