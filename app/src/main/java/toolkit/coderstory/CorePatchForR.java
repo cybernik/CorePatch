@@ -57,21 +57,8 @@ public class CorePatchForR extends XposedHelper implements IXposedHookLoadPackag
         }
     }
 
-    final XSharedPreferences prefs = new XSharedPreferences(BuildConfig.APPLICATION_ID, "conf");
-
     @Override
     public void handleLoadPackage(XC_LoadPackage.LoadPackageParam loadPackageParam) throws IllegalAccessException, InvocationTargetException, InstantiationException {
-        if (BuildConfig.DEBUG) {
-            XposedBridge.log("D/" + MainHook.TAG + " downgrade=" + prefs.getBoolean("downgrade", true));
-            XposedBridge.log("D/" + MainHook.TAG + " authcreak=" + prefs.getBoolean("authcreak", false));
-            XposedBridge.log("D/" + MainHook.TAG + " digestCreak=" + prefs.getBoolean("digestCreak", true));
-            XposedBridge.log("D/" + MainHook.TAG + " exactSigCheck=" + prefs.getBoolean("exactSigCheck", false));
-            XposedBridge.log("D/" + MainHook.TAG + " UsePreSig=" + prefs.getBoolean("UsePreSig", false));
-            XposedBridge.log("D/" + MainHook.TAG + " bypassBlock=" + prefs.getBoolean("bypassBlock", true));
-            XposedBridge.log("D/" + MainHook.TAG + " sharedUser=" + prefs.getBoolean("sharedUser", false));
-            XposedBridge.log("D/" + MainHook.TAG + " disableVerificationAgent=" + prefs.getBoolean("disableVerificationAgent", true));
-        }
-
         var pmService = XposedHelpers.findClassIfExists("com.android.server.pm.PackageManagerService",
                 loadPackageParam.classLoader);
         if (pmService != null) {
@@ -80,40 +67,40 @@ public class CorePatchForR extends XposedHelper implements IXposedHookLoadPackag
                     "android.content.pm.PackageInfoLite");
             if (checkDowngrade != null) {
                 // 允许降级
-                XposedBridge.hookMethod(checkDowngrade, new ReturnConstant(prefs, "downgrade", null));
+                XposedBridge.hookMethod(checkDowngrade, new ReturnConstant(null));
             }
             // exists on flyme 9(Android 11) only
             var flymeCheckDowngrade = XposedHelpers.findMethodExactIfExists(pmService, "checkDowngrade",
                     "android.content.pm.PackageInfoLite",
                     "android.content.pm.PackageInfoLite");
             if (flymeCheckDowngrade != null)
-                XposedBridge.hookMethod(flymeCheckDowngrade, new ReturnConstant(prefs, "downgrade", true));
+                XposedBridge.hookMethod(flymeCheckDowngrade, new ReturnConstant(true));
         }
 
         // apk内文件修改后 digest校验会失败
         hookAllMethods("android.util.jar.StrictJarVerifier", loadPackageParam.classLoader, "verifyMessageDigest",
-                new ReturnConstant(prefs, "authcreak", true));
+                new ReturnConstant(true));
         hookAllMethods("android.util.jar.StrictJarVerifier", loadPackageParam.classLoader, "verify",
-                new ReturnConstant(prefs, "authcreak", true));
+                new ReturnConstant(true));
         hookAllMethods("java.security.MessageDigest", loadPackageParam.classLoader, "isEqual",
-                new ReturnConstant(prefs, "authcreak", true));
+                new ReturnConstant(true));
 
         // Targeting R+ (version " + Build.VERSION_CODES.R + " and above) requires"
         // + " the resources.arsc of installed APKs to be stored uncompressed"
         // + " and aligned on a 4-byte boundary
         // target >=30 的情况下 resources.arsc 必须是未压缩的且4K对齐
         hookAllMethods("android.content.res.AssetManager", loadPackageParam.classLoader, "containsAllocatedTable",
-                new ReturnConstant(prefs, "authcreak", false));
+                new ReturnConstant(false));
 
         // No signature found in package of version " + minSignatureSchemeVersion
         // + " or newer for package " + apkPath
         findAndHookMethod("android.util.apk.ApkSignatureVerifier", loadPackageParam.classLoader, "getMinimumSignatureSchemeVersionForTargetSdk", int.class,
-                new ReturnConstant(prefs, "authcreak", 0));
+                new ReturnConstant(0));
         var apkVerifierClass = XposedHelpers.findClassIfExists("com.android.apksig.ApkVerifier",
                 loadPackageParam.classLoader);
         if (apkVerifierClass != null) {
             findAndHookMethod(apkVerifierClass, "getMinimumSignatureSchemeVersionForTargetSdk", int.class,
-                    new ReturnConstant(prefs, "authcreak", 0));
+                    new ReturnConstant(0));
         }
 
         // 当verifyV1Signature抛出转换异常时，替换一个签名作为返回值
@@ -136,93 +123,79 @@ public class CorePatchForR extends XposedHelper implements IXposedHookLoadPackag
         Class<?> parseResult = XposedHelpers.findClassIfExists("android.content.pm.parsing.result.ParseResult", loadPackageParam.classLoader);
         hookAllMethods("android.util.jar.StrictJarVerifier", loadPackageParam.classLoader, "verifyBytes", new XC_MethodHook() {
             public void afterHookedMethod(MethodHookParam param) throws Throwable {
-                if (prefs.getBoolean("digestCreak", true)) {
-                    if (!prefs.getBoolean("UsePreSig", false)) {
-                        final Object block = constructor.newInstance(param.args[0]);
-                        Object[] infos = (Object[]) XposedHelpers.callMethod(block, "getSignerInfos");
-                        Object info = infos[0];
-                        @SuppressWarnings("unchecked")
-                        List<X509Certificate> verifiedSignerCertChain = (List<X509Certificate>) XposedHelpers.callMethod(info, "getCertificateChain", block);
-                        param.setResult(verifiedSignerCertChain.toArray(
-                                new X509Certificate[0]));
-                    }
-                }
+
             }
         });
         hookAllMethods("android.util.apk.ApkSignatureVerifier", loadPackageParam.classLoader, "verifyV1Signature", new XC_MethodHook() {
             public void afterHookedMethod(MethodHookParam methodHookParam) throws Throwable {
-                if (prefs.getBoolean("authcreak", false)) {
-                    Throwable throwable = methodHookParam.getThrowable();
-                    Integer parseErr = null;
-                    if (parseResult != null && ((Method) methodHookParam.method).getReturnType() == parseResult) {
-                        Object result = methodHookParam.getResult();
-                        if ((boolean) XposedHelpers.callMethod(result, "isError")) {
-                            parseErr = (int) XposedHelpers.callMethod(result, "getErrorCode");
+                Throwable throwable = methodHookParam.getThrowable();
+                Integer parseErr = null;
+                if (parseResult != null && ((Method) methodHookParam.method).getReturnType() == parseResult) {
+                    Object result = methodHookParam.getResult();
+                    if ((boolean) XposedHelpers.callMethod(result, "isError")) {
+                        parseErr = (int) XposedHelpers.callMethod(result, "getErrorCode");
+                    }
+                }
+                if (throwable != null || parseErr != null) {
+                    Signature[] lastSigs = null;
+                    try {
+                        PackageManager PM = AndroidAppHelper.currentApplication().getPackageManager();
+                        if (PM == null) {
+                            XposedBridge.log("E/" + MainHook.TAG + " " + BuildConfig.APPLICATION_ID + " Cannot get the Package Manager... Are you using MiUI?");
+                        } else {
+                            PackageInfo pI;
+                            if (parseErr != null) {
+                                pI = PM.getPackageArchiveInfo((String) methodHookParam.args[1], 0);
+                            } else {
+                                pI = PM.getPackageArchiveInfo((String) methodHookParam.args[0], 0);
+                            }
+                            PackageInfo InstpI = PM.getPackageInfo(pI.packageName, PackageManager.GET_SIGNING_CERTIFICATES);
+                            lastSigs = InstpI.signingInfo.getSigningCertificateHistory();
+                        }
+                    } catch (Throwable ignored) {
+
+                    }
+                    try {
+                        if (lastSigs == null) {
+                            final Object origJarFile = constructorExact.newInstance(methodHookParam.args[parseErr == null ? 0 : 1], true, false);
+                            final ZipEntry manifestEntry = (ZipEntry) XposedHelpers.callMethod(origJarFile, "findEntry", "AndroidManifest.xml");
+                            final Certificate[][] lastCerts;
+                            if (parseErr != null) {
+                                lastCerts = (Certificate[][]) XposedHelpers.callMethod(XposedHelpers.callStaticMethod(ASV, "loadCertificates", methodHookParam.args[0], origJarFile, manifestEntry), "getResult");
+                            } else {
+                                lastCerts = (Certificate[][]) XposedHelpers.callStaticMethod(ASV, "loadCertificates", origJarFile, manifestEntry);
+                            }
+                            lastSigs = (Signature[]) XposedHelpers.callStaticMethod(ASV, "convertToSignatures", (Object) lastCerts);
+                        }
+                    } catch (Throwable ignored) {
+                    }
+                    signingDetailsArgs[0] = Objects.requireNonNullElseGet(lastSigs, () -> new Signature[]{new Signature(SIGNATURE)});
+                    Object newInstance = findConstructorExact.newInstance(signingDetailsArgs);
+
+                    //修复 java.lang.ClassCastException: Cannot cast android.content.pm.PackageParser$SigningDetails to android.util.apk.ApkSignatureVerifier$SigningDetailsWithDigests
+                    Class<?> signingDetailsWithDigests = XposedHelpers.findClassIfExists("android.util.apk.ApkSignatureVerifier.SigningDetailsWithDigests", loadPackageParam.classLoader);
+                    if (signingDetailsWithDigests != null) {
+                        Constructor<?> signingDetailsWithDigestsConstructorExact = XposedHelpers.findConstructorExact(signingDetailsWithDigests, signingDetails, Map.class);
+                        signingDetailsWithDigestsConstructorExact.setAccessible(true);
+                        newInstance = signingDetailsWithDigestsConstructorExact.newInstance(newInstance, null);
+                    }
+                    if (throwable != null) {
+                        Throwable cause = throwable.getCause();
+                        if (throwable.getClass() == packageParserException) {
+                            if (error.getInt(throwable) == -103) {
+                                methodHookParam.setResult(newInstance);
+                            }
+                        }
+                        if (cause != null && cause.getClass() == packageParserException) {
+                            if (error.getInt(cause) == -103) {
+                                methodHookParam.setResult(newInstance);
+                            }
                         }
                     }
-                    if (throwable != null || parseErr != null) {
-                        Signature[] lastSigs = null;
-                        try {
-                            if (prefs.getBoolean("UsePreSig", false)) {
-                                PackageManager PM = AndroidAppHelper.currentApplication().getPackageManager();
-                                if (PM == null) {
-                                    XposedBridge.log("E/" + MainHook.TAG + " " + BuildConfig.APPLICATION_ID + " Cannot get the Package Manager... Are you using MiUI?");
-                                } else {
-                                    PackageInfo pI;
-                                    if (parseErr != null) {
-                                        pI = PM.getPackageArchiveInfo((String) methodHookParam.args[1], 0);
-                                    } else {
-                                        pI = PM.getPackageArchiveInfo((String) methodHookParam.args[0], 0);
-                                    }
-                                    PackageInfo InstpI = PM.getPackageInfo(pI.packageName, PackageManager.GET_SIGNING_CERTIFICATES);
-                                    lastSigs = InstpI.signingInfo.getSigningCertificateHistory();
-                                }
-                            }
-                        } catch (Throwable ignored) {
-
-                        }
-                        try {
-                            if (lastSigs == null && prefs.getBoolean("digestCreak", true)) {
-                                final Object origJarFile = constructorExact.newInstance(methodHookParam.args[parseErr == null ? 0 : 1], true, false);
-                                final ZipEntry manifestEntry = (ZipEntry) XposedHelpers.callMethod(origJarFile, "findEntry", "AndroidManifest.xml");
-                                final Certificate[][] lastCerts;
-                                if (parseErr != null) {
-                                    lastCerts = (Certificate[][]) XposedHelpers.callMethod(XposedHelpers.callStaticMethod(ASV, "loadCertificates", methodHookParam.args[0], origJarFile, manifestEntry), "getResult");
-                                } else {
-                                    lastCerts = (Certificate[][]) XposedHelpers.callStaticMethod(ASV, "loadCertificates", origJarFile, manifestEntry);
-                                }
-                                lastSigs = (Signature[]) XposedHelpers.callStaticMethod(ASV, "convertToSignatures", (Object) lastCerts);
-                            }
-                        } catch (Throwable ignored) {
-                        }
-                        signingDetailsArgs[0] = Objects.requireNonNullElseGet(lastSigs, () -> new Signature[]{new Signature(SIGNATURE)});
-                        Object newInstance = findConstructorExact.newInstance(signingDetailsArgs);
-
-                        //修复 java.lang.ClassCastException: Cannot cast android.content.pm.PackageParser$SigningDetails to android.util.apk.ApkSignatureVerifier$SigningDetailsWithDigests
-                        Class<?> signingDetailsWithDigests = XposedHelpers.findClassIfExists("android.util.apk.ApkSignatureVerifier.SigningDetailsWithDigests", loadPackageParam.classLoader);
-                        if (signingDetailsWithDigests != null) {
-                            Constructor<?> signingDetailsWithDigestsConstructorExact = XposedHelpers.findConstructorExact(signingDetailsWithDigests, signingDetails, Map.class);
-                            signingDetailsWithDigestsConstructorExact.setAccessible(true);
-                            newInstance = signingDetailsWithDigestsConstructorExact.newInstance(newInstance, null);
-                        }
-                        if (throwable != null) {
-                            Throwable cause = throwable.getCause();
-                            if (throwable.getClass() == packageParserException) {
-                                if (error.getInt(throwable) == -103) {
-                                    methodHookParam.setResult(newInstance);
-                                }
-                            }
-                            if (cause != null && cause.getClass() == packageParserException) {
-                                if (error.getInt(cause) == -103) {
-                                    methodHookParam.setResult(newInstance);
-                                }
-                            }
-                        }
-                        if (parseErr != null && parseErr == -103) {
-                            Object input = methodHookParam.args[0];
-                            XposedHelpers.callMethod(input, "reset");
-                            methodHookParam.setResult(XposedHelpers.callMethod(input, "success", newInstance));
-                        }
+                    if (parseErr != null && parseErr == -103) {
+                        Object input = methodHookParam.args[0];
+                        XposedHelpers.callMethod(input, "reset");
+                        methodHookParam.setResult(XposedHelpers.callMethod(input, "success", newInstance));
                     }
                 }
             }
@@ -238,7 +211,7 @@ public class CorePatchForR extends XposedHelper implements IXposedHookLoadPackag
                 // Or applications will have all privileged permissions
                 // https://cs.android.com/android/platform/superproject/+/master:frameworks/base/core/java/android/content/pm/PackageParser.java;l=5947?q=CertCapabilities
                 // https://cs.android.com/android/platform/superproject/main/+/main:frameworks/base/services/core/java/com/android/server/accounts/AccountManagerService.java;l=5867
-                if ((Integer) param.args[1] != 4 && (Integer) param.args[1] != 16 && prefs.getBoolean("digestCreak", true)) {
+                if ((Integer) param.args[1] != 4 && (Integer) param.args[1] != 16) {
                     param.setResult(true);
                 }
             }
@@ -247,12 +220,10 @@ public class CorePatchForR extends XposedHelper implements IXposedHookLoadPackag
         findAndHookMethod("android.content.pm.ApplicationInfo", loadPackageParam.classLoader, "isPackageWhitelistedForHiddenApis", new XC_MethodHook() {
             @Override
             protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                if (prefs.getBoolean("digestCreak", true)) {
-                    ApplicationInfo info = (ApplicationInfo) param.thisObject;
-                    if ((info.flags & ApplicationInfo.FLAG_SYSTEM) != 0
-                            || (info.flags & ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0) {
-                        param.setResult(true);
-                    }
+                ApplicationInfo info = (ApplicationInfo) param.thisObject;
+                if ((info.flags & ApplicationInfo.FLAG_SYSTEM) != 0
+                        || (info.flags & ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0) {
+                    param.setResult(true);
                 }
             }
         });
@@ -271,8 +242,7 @@ public class CorePatchForR extends XposedHelper implements IXposedHookLoadPackag
                     // https://cs.android.com/android/platform/superproject/+/android-14.0.0_r2:frameworks/base/services/core/java/com/android/server/pm/InstallPackageHelper.java;l=1097;drc=5ea7e53c3a787e25af86b0f31933ddd68ae3514e
                     // 16: InstallPackageHelper#preparePackage
                     // https://cs.android.com/android/platform/superproject/+/android-16.0.0_r2:frameworks/base/services/core/java/com/android/server/pm/InstallPackageHelper.java;l=1459;drc=d14620262929e39a409b55d11cb542c1d1c4d2f6
-                    if (prefs.getBoolean("digestCreak", true) &&
-                            Arrays.stream(Thread.currentThread().getStackTrace())
+                    if (Arrays.stream(Thread.currentThread().getStackTrace())
                                     .anyMatch((o) -> o.getMethodName().startsWith("preparePackage")
                                     )
                     ) {
@@ -286,7 +256,7 @@ public class CorePatchForR extends XposedHelper implements IXposedHookLoadPackag
             hookAllMethods(keySetManagerClass, "checkUpgradeKeySetLocked", new XC_MethodHook() {
                 @Override
                 protected void afterHookedMethod(MethodHookParam param) {
-                    if (prefs.getBoolean("digestCreak", true) && shouldBypass.get()) {
+                    if (shouldBypass.get()) {
                         param.setResult(true);
                     }
                 }
@@ -299,11 +269,7 @@ public class CorePatchForR extends XposedHelper implements IXposedHookLoadPackag
         hookAllMethods(signingDetails, "hasCommonAncestor", new XC_MethodHook() {
             @Override
             protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                if (prefs.getBoolean("digestCreak", true)
-                        && prefs.getBoolean("sharedUser", false)
-                        // because of LSPosed's bug, we can't hook verifySignatures while deoptimize it
-                        && Arrays.stream(Thread.currentThread().getStackTrace()).anyMatch((o) -> "verifySignatures".equals(o.getMethodName()))
-                )
+                if (Arrays.stream(Thread.currentThread().getStackTrace()).anyMatch((o) -> "verifySignatures".equals(o.getMethodName())))
                     param.setResult(true);
             }
         });
@@ -325,8 +291,6 @@ public class CorePatchForR extends XposedHelper implements IXposedHookLoadPackag
                 new XC_MethodHook() {
                     @Override
                     protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                        if (!prefs.getBoolean("digestCreak", true) || !prefs.getBoolean("sharedUser", false))
-                            return;
                         var flags = (int) XposedHelpers.getObjectField(param.thisObject, "uidFlags");
                         if ((flags & ApplicationInfo.FLAG_SYSTEM) != 0)
                             return; // do not modify system's signature
@@ -368,8 +332,6 @@ public class CorePatchForR extends XposedHelper implements IXposedHookLoadPackag
                 new XC_MethodHook() {
                     @Override
                     protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                        if (!prefs.getBoolean("digestCreak", true) || !prefs.getBoolean("sharedUser", false))
-                            return;
                         var flags = (int) XposedHelpers.getObjectField(param.thisObject, "uidFlags");
                         if ((flags & ApplicationInfo.FLAG_SYSTEM) != 0)
                             return; // do not modify system's signature
@@ -405,14 +367,13 @@ public class CorePatchForR extends XposedHelper implements IXposedHookLoadPackag
                 }
         );
 
-        hookAllMethods(getIsVerificationEnabledClass(loadPackageParam.classLoader), "isVerificationEnabled", new ReturnConstant(prefs, "disableVerificationAgent", false));
+        hookAllMethods(getIsVerificationEnabledClass(loadPackageParam.classLoader), "isVerificationEnabled", new ReturnConstant(false));
 
         // Allow apk splits with different signatures to be installed together
         hookAllMethods(signingDetails, "signaturesMatchExactly", new XC_MethodHook() {
             @Override
             protected void beforeHookedMethod(MethodHookParam param) {
-                if (prefs.getBoolean("exactSigCheck", false))
-                    param.setResult(true);
+                param.setResult(true);
             }
         });
 

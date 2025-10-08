@@ -19,7 +19,7 @@ public class CorePatchForT extends CorePatchForS {
                 "com.android.server.pm.parsing.pkg.AndroidPackage",
                 "android.content.pm.PackageInfoLite");
         if (checkDowngrade != null) {
-            XposedBridge.hookMethod(checkDowngrade, new ReturnConstant(prefs, "downgrade", null));
+            XposedBridge.hookMethod(checkDowngrade, new ReturnConstant(null));
         }
 
         Class<?> signingDetails = getSigningDetails(loadPackageParam.classLoader);
@@ -32,10 +32,8 @@ public class CorePatchForT extends CorePatchForS {
                 // Or applications will have all privileged permissions
                 // https://cs.android.com/android/platform/superproject/+/master:frameworks/base/core/java/android/content/pm/PackageParser.java;l=5947?q=CertCapabilities
                 // https://cs.android.com/android/platform/superproject/main/+/main:frameworks/base/services/core/java/com/android/server/accounts/AccountManagerService.java;l=5867
-                if (prefs.getBoolean("digestCreak", true)) {
-                    if ((Integer) param.args[1] != 4 && (Integer) param.args[1] != 16) {
-                        param.setResult(true);
-                    }
+                if ((Integer) param.args[1] != 4 && (Integer) param.args[1] != 16) {
+                    param.setResult(true);
                 }
             }
         });
@@ -46,13 +44,11 @@ public class CorePatchForT extends CorePatchForS {
                 ParsedPackage, int.class, new XC_MethodHook() {
                     @Override
                     protected void afterHookedMethod(MethodHookParam param) {
-                        if (prefs.getBoolean("digestCreak", true) && prefs.getBoolean("UsePreSig", false)) {
-                            //If we decide to crack this then at least make sure they are same apks, avoid another one that tries to impersonate.
-                            if (param.getResult().equals(false)) {
-                                String pPname = (String) XposedHelpers.callMethod(param.args[1], "getPackageName");
-                                if (pPname.contentEquals((String) param.args[0])) {
-                                    param.setResult(true);
-                                }
+                        //If we decide to crack this then at least make sure they are same apks, avoid another one that tries to impersonate.
+                        if (param.getResult().equals(false)) {
+                            String pPname = (String) XposedHelpers.callMethod(param.args[1], "getPackageName");
+                            if (pPname.contentEquals((String) param.args[0])) {
+                                param.setResult(true);
                             }
                         }
                     }
@@ -65,9 +61,7 @@ public class CorePatchForT extends CorePatchForS {
             XposedBridge.hookMethod(assertMinSignatureSchemeIsValid, new XC_MethodHook() {
                 @Override
                 protected void afterHookedMethod(MethodHookParam param) {
-                    if (prefs.getBoolean("authcreak", false)) {
-                        param.setResult(null);
-                    }
+                    param.setResult(null);
                 }
             });
         }
@@ -77,9 +71,7 @@ public class CorePatchForT extends CorePatchForS {
             XposedBridge.hookAllConstructors(strictJarVerifier, new XC_MethodHook() {
                 @Override
                 protected void afterHookedMethod(MethodHookParam param) {
-                    if (prefs.getBoolean("authcreak", false)) {
-                        XposedHelpers.setBooleanField(param.thisObject, "signatureSchemeRollbackProtectionsEnforced", false);
-                    }
+                    XposedHelpers.setBooleanField(param.thisObject, "signatureSchemeRollbackProtectionsEnforced", false);
                 }
             });
         }

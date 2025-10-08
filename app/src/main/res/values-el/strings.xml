@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Core Patch</string>
+    <string name="app_name">ReCore Patch</string>
     <string name="module_description">Επιδιόρθωση πυρήνα Android 9-16</string>
     <string name="corepatch">Αυτή η έκδοση είναι μόνο για Android 9-16.\nΧρησιμοποιήστε την πιο πρόσφατη έκδοση του LSPosed.</string>
     <string name="downgr">Επιτρεπόμενη υποβάθμιση</string>

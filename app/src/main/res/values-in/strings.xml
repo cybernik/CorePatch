@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Core Patch</string>
+    <string name="app_name">ReCore Patch</string>
     <string name="module_description">Android 9-16 core patch</string>
     <string name="corepatch">Versi ini adalah untuk Android 9-16 saja.\nHarap gunakan versi LSPosed terbaru.</string>
     <string name="downgr">Izinkan turun versi</string>

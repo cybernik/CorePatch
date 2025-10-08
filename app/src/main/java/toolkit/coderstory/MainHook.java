@@ -5,6 +5,7 @@ import android.os.Build;
 import com.coderstory.toolkit.BuildConfig;
 
 import de.robv.android.xposed.IXposedHookLoadPackage;
+import de.robv.android.xposed.XSharedPreferences;
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.callbacks.XC_LoadPackage;
 

@@ -20,13 +20,11 @@ public class CorePatchForS extends CorePatchForR {
                 XposedBridge.hookMethod(doesSignatureMatchForPermissions, new XC_MethodHook() {
                     @Override
                     protected void afterHookedMethod(MethodHookParam param) {
-                        if (prefs.getBoolean("digestCreak", true) && prefs.getBoolean("UsePreSig", false)) {
-                            //If we decide to crack this then at least make sure they are same apks, avoid another one that tries to impersonate.
-                            if (param.getResult().equals(false)) {
-                                String pPname = (String) XposedHelpers.callMethod(param.args[1], "getPackageName");
-                                if (pPname.contentEquals((String) param.args[0])) {
-                                    param.setResult(true);
-                                }
+                        //If we decide to crack this then at least make sure they are same apks, avoid another one that tries to impersonate.
+                        if (param.getResult().equals(false)) {
+                            String pPname = (String) XposedHelpers.callMethod(param.args[1], "getPackageName");
+                            if (pPname.contentEquals((String) param.args[0])) {
+                                param.setResult(true);
                             }
                         }
                     }

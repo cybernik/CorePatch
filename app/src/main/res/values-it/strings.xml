@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Core Patch</string>
+    <string name="app_name">ReCore Patch</string>
     <string name="module_description">Android 9-16 core patch</string>
     <string name="corepatch">Questa versione è solo per Android 9-16.\nPer favore utilizza la versione più recente di LSPosed.</string>
     <string name="downgr">Consenti ​​Downgrade</string>
